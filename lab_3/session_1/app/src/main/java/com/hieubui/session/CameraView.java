@@ -1,10 +1,12 @@
 package com.hieubui.session;
 
+import static com.hieubui.session.Orientation.getOrientation;
+
 import android.app.Activity;
 import android.content.Context;
 import android.hardware.Camera;
 import android.util.AttributeSet;
-import android.view.Surface;
+import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
@@ -18,31 +20,36 @@ public class CameraView extends SurfaceView implements SurfaceHolder.Callback {
 
     public CameraView(Context context) {
         super(context);
-        setupComponents();
+        getHolder().addCallback(this);
     }
 
     public CameraView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        setupComponents();
+        getHolder().addCallback(this);
     }
 
     public CameraView(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-        setupComponents();
-    }
-
-    private void setupComponents() {
-        camera = Camera.open();
         getHolder().addCallback(this);
     }
 
     @Override
     public void surfaceCreated(@NonNull SurfaceHolder surfaceHolder) {
+        if (camera == null) {
+            return;
+        }
+
         setupCamera(surfaceHolder);
     }
 
     private void setupCamera(@NonNull SurfaceHolder surfaceHolder) {
-        int orientation = getOrientation();
+        if (camera == null) {
+            Log.w("CameraView", "The camera is not open!");
+            return;
+        }
+
+        Activity activity = (Activity) getContext();
+        int orientation = getOrientation(activity);
 
         try {
             camera.setDisplayOrientation(orientation);
@@ -53,43 +60,42 @@ public class CameraView extends SurfaceView implements SurfaceHolder.Callback {
         }
     }
 
-    private int getOrientation() {
-        Activity activity = (Activity) getContext();
-        int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-        Camera.CameraInfo cameraInfo = new android.hardware.Camera.CameraInfo();
-        int degrees = 0;
-
-        switch (rotation) {
-            case Surface.ROTATION_0:
-                break;
-
-            case Surface.ROTATION_90:
-                degrees = 90;
-                break;
-            case Surface.ROTATION_180:
-                degrees = 180;
-                break;
-            case Surface.ROTATION_270:
-                degrees = 270;
-                break;
-        }
-        Camera.getCameraInfo(0, cameraInfo);
-        return (cameraInfo.orientation - degrees + 360) % 360;
-    }
-
     @Override
     public void surfaceChanged(@NonNull SurfaceHolder surfaceHolder, int i, int i1, int i2) {
+        if (camera == null) {
+            return;
+        }
+
         camera.stopPreview();
         setupCamera(surfaceHolder);
     }
 
     @Override
     public void surfaceDestroyed(@NonNull SurfaceHolder surfaceHolder) {
-        camera.stopPreview();
-        camera.release();
+        if (camera != null) {
+            camera.stopPreview();
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        if (camera != null) {
+            camera.release();
+        }
+        super.onDetachedFromWindow();
+    }
+
+    public void setup() {
+        camera = Camera.open();
+        setupCamera(getHolder());
     }
 
     public void setZoom(float zoomRatio) {
+        if (camera == null) {
+            Log.w("CameraView", "The camera is not setup!");
+            return;
+        }
+
         Camera.Parameters parameters = camera.getParameters();
 
         if (parameters.isZoomSupported()) {
@@ -102,6 +108,14 @@ public class CameraView extends SurfaceView implements SurfaceHolder.Callback {
     }
 
     public void takePhoto(Camera.PictureCallback pictureCallback) {
-        camera.takePicture(null, null, pictureCallback);
+        if (camera == null) {
+            Log.w("CameraView", "The camera is not setup!");
+            return;
+        }
+
+        camera.takePicture(null, null, (bytes, camera) -> {
+            pictureCallback.onPictureTaken(bytes, camera);
+            camera.startPreview();
+        });
     }
 }
